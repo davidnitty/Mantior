@@ -1,0 +1,55 @@
+openapi: 3.0.0
+info:
+  title: Payment API
+  version: 1.0.0
+paths:
+  /v1/charges:
+    post:
+      summary: Create a charge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChargeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChargeResponse'
+components:
+  schemas:
+    ChargeRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - card_token
+      properties:
+        amount:
+          type: number
+          description: Amount in dollars
+        currency:
+          type: string
+          example: USD
+        card_token:
+          type: string
+          description: Tokenized card
+    ChargeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [pending, success, failed]
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string

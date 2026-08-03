@@ -1,0 +1,57 @@
+openapi: 3.0.0
+info:
+  title: Payment API
+  version: 2.0.0
+paths:
+  /v2/payments:
+    post:
+      summary: Create a payment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      required:
+        - amount_cents
+        - currency
+        - payment_token
+      properties:
+        amount_cents:
+          type: integer
+          description: Amount in cents
+        currency:
+          type: string
+          example: USD
+        payment_token:
+          type: string
+          description: Tokenized payment method
+    PaymentResponse:
+      type: object
+      properties:
+        payment_id:
+          type: string
+        amount_cents:
+          type: integer
+        status:
+          type: string
+          enum: [pending, succeeded, failed]
+        customer:
+          type: object
+          properties:
+            uuid:
+              type: string
+            email:
+              type: string
+            full_name:
+              type: string

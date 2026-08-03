@@ -1,0 +1,30 @@
+name: Mantior API Scan
+
+# Sample workflow: run Mantior whenever your API specs change.
+# The `mantior/action@v1` action is the future publish target — until then,
+# run the CLI directly (docker run mantior/mantior:latest scan) or locally.
+on:
+  push:
+    paths:
+      - 'specs/**/*.yaml'
+      - 'specs/**/*.json'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run Mantior Scan
+        uses: mantior/action@v1
+        with:
+          config: ./mantior.yaml
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          slack-webhook: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Check for breaking changes
+        run: |
+          if [ -f .mantior-report.json ]; then
+            echo "Breaking changes detected. Review the report below."
+            cat .mantior-report.json
+          fi

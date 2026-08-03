@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔄 Running CI checks..."
+
+# Run full test suite (includes integration if not skipped)
+npm run test:ci
+
+echo "✅ All tests passed!"

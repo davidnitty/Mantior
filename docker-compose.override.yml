@@ -1,0 +1,22 @@
+version: '3.8'
+
+# Development override: `docker-compose -f docker-compose.yml -f docker-compose.override.yml up`
+services:
+  mantior:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src:ro
+      - ./dist:/app/dist:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+    command: ["dev"]
+
+  mantior-cli:
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug

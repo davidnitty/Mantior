@@ -1,0 +1,36 @@
+# 🛡️ Mantior Configuration
+# ────────────────────────────
+# This file tells Mantior what to watch, scan, and fix.
+# Create one with: mantior init
+
+api:
+  name: "Payment Core API"
+  # Path to the NEW OpenAPI spec consumers should migrate to.
+  spec: ./specs/payment-api-v2.yaml
+  # URL (or local path) of the CURRENT/LIVE spec that consumers are coded against.
+  reference_url: "https://api.payment.io/v1/openapi.json"
+
+consumers:
+  - repo: "https://github.com/payment-corp/web-checkout.git"
+    branch: "main"
+    language: "typescript"
+  # - repo: "https://github.com/payment-corp/mobile-orchestrator.git"
+  #   branch: "develop"
+  #   language: "python"
+
+security:
+  # ${ENV_VAR} values are interpolated from the environment.
+  github_token: ${GITHUB_TOKEN}
+
+rules:
+  auto_pr: true
+  default_reviewer: "@api-team"
+  pr_labels: ["dependencies", "mantior"]
+
+mappings:
+  - old_path: "response.body.amount"
+    new_path: "response.body.amount_cents"
+    transform: "value / 100"
+
+notifications:
+  slack_webhook: ${SLACK_WEBHOOK}
