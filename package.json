@@ -24,7 +24,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --maxWorkers=2",
-    "test:integration": "jest --testPathPattern=integration",
+    "test:integration": "jest --testPathPattern=integration --coverage=false",
     "test:unit": "jest --testPathPattern=__tests__",
     "test:python": "jest --testPathPattern=python",
     "test:ts": "jest --testPathPattern=ast-walker\\.test",
