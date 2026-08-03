@@ -39,7 +39,10 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           directory: ./coverage
-          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Uploading to a private repo requires a CODECOV_TOKEN; until one is
+          # configured, don't let the upload fail the pipeline.
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
 
   integration-tests:
     name: Integration Tests
