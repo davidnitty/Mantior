@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 
 import { afterAll, describe, expect, it } from '@jest/globals';
 
-import { createApp } from './health-server';
+import { createApp } from '../health-server';
 
 describe('health-server', () => {
   const servers: Server[] = [];

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import axios from 'axios';
 
-import { Notifier } from './notifier';
+import { Notifier } from '../notifier';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;

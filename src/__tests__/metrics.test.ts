@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { fixAttempts, metricsContent, prsOpened } from './metrics';
+import { fixAttempts, metricsContent, prsOpened } from '../metrics';
 
 describe('metrics', () => {
   it('increments counters and exposes Prometheus text', async () => {
