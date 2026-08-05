@@ -69,6 +69,19 @@ export interface AutonomyLog {
   approved_by?: string;
 }
 
+export interface AuditRecord {
+  id: number;
+  timestamp: string;
+  action: string;
+  userId?: string;
+  sessionId?: string;
+  metadata: Record<string, unknown>;
+  before?: unknown;
+  after?: unknown;
+  ip?: string;
+  userAgent?: string;
+}
+
 export interface ConfigRecord {
   id: number;
   name: string;
@@ -245,6 +258,23 @@ export class MantiorDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_autonomy_logs_scan_id ON autonomy_logs(scan_id);
       CREATE INDEX IF NOT EXISTS idx_autonomy_logs_timestamp ON autonomy_logs(timestamp);
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        action TEXT NOT NULL,
+        user_id TEXT,
+        session_id TEXT,
+        metadata TEXT NOT NULL,
+        before_state TEXT,
+        after_state TEXT,
+        ip TEXT,
+        user_agent TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);
+      CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
     `);
   }
 
@@ -452,6 +482,83 @@ export class MantiorDatabase {
       .all(limit) as unknown as AutonomyLog[];
   }
 
+  /** Append an immutable audit entry. */
+  insertAudit(entry: {
+    timestamp: string;
+    action: string;
+    userId?: string;
+    sessionId?: string;
+    metadata: Record<string, unknown>;
+    before?: unknown;
+    after?: unknown;
+    ip?: string;
+    userAgent?: string;
+  }): number {
+    const stmt = this.db.prepare(
+      `INSERT INTO audit_logs (
+         timestamp, action, user_id, session_id, metadata, before_state, after_state, ip, user_agent
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const result = stmt.run(
+      entry.timestamp,
+      entry.action,
+      entry.userId ?? null,
+      entry.sessionId ?? null,
+      JSON.stringify(entry.metadata),
+      entry.before === undefined ? null : JSON.stringify(entry.before),
+      entry.after === undefined ? null : JSON.stringify(entry.after),
+      entry.ip ?? null,
+      entry.userAgent ?? null,
+    );
+    return Number(result.lastInsertRowid);
+  }
+
+  /** Search audit entries with optional filters. */
+  searchAuditLogs(params: {
+    action?: string;
+    userId?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }): AuditRecord[] {
+    const conditions: string[] = [];
+    const args: Array<string | number> = [];
+    if (params.action) {
+      conditions.push('action = ?');
+      args.push(params.action);
+    }
+    if (params.userId) {
+      conditions.push('user_id = ?');
+      args.push(params.userId);
+    }
+    if (params.startDate) {
+      conditions.push('timestamp >= ?');
+      args.push(params.startDate);
+    }
+    if (params.endDate) {
+      conditions.push('timestamp <= ?');
+      args.push(params.endDate);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = params.limit ?? 100;
+    const offset = params.offset ?? 0;
+    const rows = this.db
+      .prepare(`SELECT * FROM audit_logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`)
+      .all(...args, limit, offset) as unknown as Array<Record<string, unknown>>;
+    return rows.map(rowToAuditRecord);
+  }
+
+  /** Audit entries whose metadata contains the given key/value (e.g. workflowId). */
+  getAuditByMetadataKey(key: string, value: string): AuditRecord[] {
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM audit_logs WHERE json_extract(metadata, ?) = ? ORDER BY timestamp ASC',
+      )
+      .all(`$.${key}`, value) as unknown as Array<Record<string, unknown>>;
+    return rows.map(rowToAuditRecord);
+  }
+
   getStatusSummary(): StatusSummary {
     const scan = this.getLatestScan();
     const counts = this.db
@@ -529,4 +636,46 @@ function defaultDatabasePath(): string {
     mkdirSync(dir, { recursive: true });
   }
   return join(dir, 'mantior.db');
+}
+
+function rowToAuditRecord(row: Record<string, unknown>): AuditRecord {
+  return {
+    id: Number(row.id),
+    timestamp: String(row.timestamp),
+    action: String(row.action),
+    userId: row.user_id === null || row.user_id === undefined ? undefined : String(row.user_id),
+    sessionId:
+      row.session_id === null || row.session_id === undefined ? undefined : String(row.session_id),
+    metadata: parseJsonObject(row.metadata),
+    before:
+      row.before_state === null || row.before_state === undefined
+        ? undefined
+        : parseJsonValue(row.before_state),
+    after:
+      row.after_state === null || row.after_state === undefined
+        ? undefined
+        : parseJsonValue(row.after_state),
+    ip: row.ip === null || row.ip === undefined ? undefined : String(row.ip),
+    userAgent:
+      row.user_agent === null || row.user_agent === undefined ? undefined : String(row.user_agent),
+  };
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(String(value)) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonValue(value: unknown): unknown {
+  try {
+    return JSON.parse(String(value)) as unknown;
+  } catch {
+    return String(value);
+  }
 }

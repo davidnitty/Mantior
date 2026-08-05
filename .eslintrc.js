@@ -89,6 +89,9 @@ module.exports = {
         '@typescript-eslint/no-unsafe-return': 'off',
         '@typescript-eslint/unbound-method': 'off',
         'jest/expect-expect': 'off',
+        // Test helpers commonly define non-awaited async callbacks.
+        'require-await': 'off',
+        '@typescript-eslint/require-await': 'off',
       },
     },
     {

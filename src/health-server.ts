@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 
 import express from 'express';
 
+import { router as dashboardRouter } from './dashboard/api';
 import { logger } from './logger';
 import { metricsContent } from './metrics';
 import { MantiorDatabase } from './state/database';
@@ -40,6 +41,10 @@ export function createApp(): express.Express {
   });
 
   setupWebhookRoutes(app);
+
+  // Dashboard/API surface: audit, workflows (approve/reject), metrics, policies.
+  app.use('/api', dashboardRouter);
+
   return app;
 }
 
