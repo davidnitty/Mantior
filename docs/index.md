@@ -135,6 +135,21 @@ GITHUB_WEBHOOK_SECRET=your-secret-here
 
 In production, requests without a valid signature are rejected.
 
+## Cost Controls (LLM)
+
+Mantior guards OpenAI spend with hard caps — LLM calls **stop entirely** once a limit is hit:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `MANTIOR_MAX_COST_PER_SCAN` | `10` | Max LLM cost per scan run (USD) |
+| `MANTIOR_MAX_COST_PER_DAY` | `100` | Max LLM cost per day (HARD STOP, USD) |
+| `MANTIOR_MAX_COST_PER_MONTH` | `500` | Max LLM cost per month (USD) |
+| `MANTIOR_COST_ALERT_THRESHOLD` | `0.8` | Alert at this fraction of the daily limit |
+| `LLM_MAX_CONCURRENT` | `2` | Max concurrent LLM calls |
+| `LLM_CALLS_PER_MINUTE` | `120` | Max LLM calls per minute |
+
+Costs are persisted in SQLite (`metrics` table, `llm_cost`) so limits survive restarts. The fixer also routes each call to the **cheapest capable model** (gpt-4o-mini → gpt-4o → gpt-4-turbo-preview by complexity) and downgrades when a call would exceed 10% of the remaining daily budget.
+
 ## Database
 
 Mantior stores scan history, PR history, and error logs in `~/.mantior/mantior.db`.

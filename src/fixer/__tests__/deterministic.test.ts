@@ -137,5 +137,61 @@ describe('DeterministicFixer', () => {
         rmSync(testDir, { recursive: true, force: true });
       }
     });
+    it('applies an LLM fix via splice when confidence is high', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (() => ({
+        ok: true,
+        status: 200,
+        json: () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  success: true,
+                  fixedCode: 'const uuid = response.user_uuid;',
+                  confidence: 90,
+                  explanation: 'renamed',
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 50, completion_tokens: 20 },
+        }),
+      })) as unknown as typeof fetch;
+
+      const testDir = mkdtempSync(join(tmpdir(), 'mantior-fixer-llm-'));
+      const filePath = join(testDir, 'payment.ts');
+      writeFileSync(filePath, 'const total = response.user_id;\n', 'utf8');
+
+      try {
+        const fixer = new DeterministicFixer('sk-test');
+        const change = {
+          type: 'property_removed',
+          property: 'user_id',
+          severity: 'breaking',
+          message: 'user_id removed',
+        } as BreakingChange;
+        const callSite: CallSite = {
+          file: filePath,
+          line: 1,
+          column: 11,
+          node: null,
+          change,
+          matchText: 'response.user_id',
+          context: {
+            surroundingCode: 'const total = response.user_id;',
+            objectChain: ['response', 'user_id'],
+          },
+        };
+
+        const outcome = await fixer.applyFixes([callSite], config, [change]);
+
+        expect(outcome.fixedFiles[filePath]).toContain('user_uuid');
+        expect(outcome.manualInterventions).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 });

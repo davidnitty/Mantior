@@ -356,6 +356,16 @@ export class MantiorDatabase {
       .all(limit) as unknown as MetricRecord[];
   }
 
+  /** Sum of metric values with `name` recorded at or after `from` (ISO timestamp). */
+  sumMetricByName(name: string, from: string): number {
+    const row = this.db
+      .prepare(
+        'SELECT COALESCE(SUM(value), 0) AS total FROM metrics WHERE name = ? AND timestamp >= ?',
+      )
+      .get(name, from) as { total: number };
+    return row.total;
+  }
+
   getStatusSummary(): StatusSummary {
     const scan = this.getLatestScan();
     const counts = this.db

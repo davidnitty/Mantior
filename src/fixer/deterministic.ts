@@ -7,13 +7,16 @@ import { fixAttempts } from '../metrics';
 import type { CallSite } from '../scanner/ast-walker';
 
 import { LLMFallback } from './llm-fallback';
+import type { LLMRouter } from './llm-router';
 
-export enum FixComplexity {
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high',
-  AMBIGUOUS = 'ambiguous',
-}
+export const FixComplexity = {
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high',
+  AMBIGUOUS: 'ambiguous',
+} as const;
+
+export type FixComplexity = (typeof FixComplexity)[keyof typeof FixComplexity];
 
 export interface ManualIntervention {
   file: string;
@@ -38,9 +41,9 @@ const CONFIDENCE_THRESHOLD = 70;
 export class DeterministicFixer {
   private readonly llm?: LLMFallback;
 
-  constructor(openAIApiKey?: string) {
+  constructor(openAIApiKey?: string, llmRouter?: LLMRouter) {
     if (openAIApiKey) {
-      this.llm = new LLMFallback(openAIApiKey);
+      this.llm = new LLMFallback(openAIApiKey, llmRouter);
     }
   }
 
@@ -97,7 +100,7 @@ export class DeterministicFixer {
         (complexity === FixComplexity.MEDIUM || complexity === FixComplexity.HIGH) &&
         this.llm !== undefined
       ) {
-        const llmResult = await this.attemptLlm(site, content, config);
+        const llmResult = await this.attemptLlm(site, content, config, complexity);
         if (llmResult.kind === 'applied') {
           fixedFiles[absolutePath] = llmResult.content;
           continue;
@@ -163,6 +166,7 @@ export class DeterministicFixer {
     site: CallSite,
     content: string,
     config: MantiorConfig,
+    complexity: FixComplexity,
   ): Promise<
     | { kind: 'applied'; content: string }
     | { kind: 'low-confidence' }
@@ -174,12 +178,18 @@ export class DeterministicFixer {
       return { kind: 'declined' };
     }
     try {
-      const result = await llm.attemptFix(site, content, site.change, {
-        oldRef: config.api.reference_url,
-        newRef: config.api.spec,
-        consumerLanguage: this.consumerLanguageFor(config, site),
-        filePath: site.file,
-      });
+      const result = await llm.attemptFix(
+        site,
+        content,
+        site.change,
+        {
+          oldRef: config.api.reference_url,
+          newRef: config.api.spec,
+          consumerLanguage: this.consumerLanguageFor(config, site),
+          filePath: site.file,
+        },
+        complexity,
+      );
 
       if (result.success && result.fixedContent && result.confidence >= CONFIDENCE_THRESHOLD) {
         const patched = spliceLine(content, site.line, result.fixedContent);

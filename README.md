@@ -56,7 +56,7 @@ docker run --rm \
 
 1. **Diff engine** — OpenAPI v1→v2 comparison (endpoints, schemas, properties, types, enums, required fields) with rename heuristics + confidence scores.
 2. **Scanner** — ts-morph AST walker (TS/JS) and a CPython `ast` walker; regex fallback for other languages.
-3. **Fixer** — deterministic rule engine first (config `mappings`), then an OpenAI fallback gated on ≥ 70% confidence. Anything uncertain lands in a manual-review bucket — Mantior never guesses silently.
+3. **Fixer** — deterministic rule engine first (config `mappings`), then an OpenAI fallback gated on ≥ 70% confidence. LLM spend is guarded by hard cost caps (per-scan/day/month, persisted to SQLite), cost-aware model routing (cheapest capable model, budget-based downgrades), rate limiting, and response caching. Anything uncertain lands in a manual-review bucket — Mantior never guesses silently.
 4. **PR opener** — direct branch with automatic fork fallback; deduplicated; labels + reviewers; PRs are always human-reviewed before merging (no auto-merge, by design).
 
 ## Configuration

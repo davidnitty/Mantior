@@ -3,8 +3,10 @@ import { relative } from 'node:path';
 import { Octokit } from '@octokit/rest';
 
 import { configHash, loadConfig, type MantiorConfig } from './config/loader';
+import { costConfigFromEnv, CostController } from './cost-control';
 import { DiffEngine, type BreakingChange } from './diff/engine';
 import { DeterministicFixer } from './fixer/deterministic';
+import { LLMRouter } from './fixer/llm-router';
 import { PRDeduplicator } from './github/pr-dedupe';
 import { PROpener, type PROpeningResult } from './github/pr-opener';
 import { logger } from './logger';
@@ -80,7 +82,20 @@ export class Orchestrator {
     }
     logger.info({ changeCount: changes.length }, 'Diff complete');
 
-    const fixer = new DeterministicFixer(process.env.OPENAI_API_KEY);
+    // Risk mitigation (Four Horsemen — Uncontrolled Costs): hard caps on LLM
+    // spend, cost-aware model routing, and a HARD STOP once caps are hit.
+    const costController = new CostController(costConfigFromEnv(), this.db, this.notifier);
+    costController.beginScan();
+    const llmRouter = new LLMRouter(costController);
+    const costCheck = costController.canProceed();
+    if (!costCheck.allowed) {
+      logger.warn(
+        { reason: costCheck.reason },
+        'LLM cost caps already exhausted; LLM fallback disabled for this run',
+      );
+    }
+
+    const fixer = new DeterministicFixer(process.env.OPENAI_API_KEY, llmRouter);
     const opener = new PROpener(config);
     const token = config.security.github_token ?? process.env.GITHUB_TOKEN;
     const deduper = new PRDeduplicator(

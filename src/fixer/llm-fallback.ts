@@ -3,6 +3,10 @@ import { logger } from '../logger';
 import { fixAttempts } from '../metrics';
 import type { CallSite } from '../scanner/ast-walker';
 
+import type { FixComplexity } from './deterministic';
+import { LLMRateLimiter } from './llm-rate-limit';
+import type { LLMRouter } from './llm-router';
+
 export interface LLMFixResult {
   success: boolean;
   fixedContent?: string;
@@ -18,24 +22,49 @@ export interface LLMContext {
   filePath?: string;
 }
 
+export interface LLMCallResult {
+  content: string;
+  promptTokens: number;
+  completionTokens: number;
+}
+
 const CONFIDENCE_THRESHOLD = 70;
-const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4-turbo-preview';
+const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? 'gpt-4-turbo-preview';
+
+function rateLimitFromEnv(): { maxConcurrent: number; maxPerMinute: number } {
+  return {
+    maxConcurrent: envNumber(process.env.LLM_MAX_CONCURRENT, 2),
+    maxPerMinute: envNumber(process.env.LLM_CALLS_PER_MINUTE, 120),
+  };
+}
 
 /**
  * OpenAI-backed fallback fixer. Called only for MEDIUM/HIGH complexity changes
- * the deterministic engine cannot resolve with confidence. Responses are cached
- * by (change, line, file) so repeated scans don't burn tokens.
+ * the deterministic engine cannot resolve with confidence.
+ *
+ * Risk mitigations (Four Horsemen — Uncontrolled Costs):
+ *  - LLM router picks the cheapest capable model and downgrades on budget.
+ *  - CostController hard-stops calls when per-scan/day/month caps are hit.
+ *  - Rate limiter bounds concurrency + per-minute burst.
+ *  - Responses are cached by (file, line, change) so repeat scans don't burn tokens.
  */
 export class LLMFallback {
   private readonly cache = new Map<string, LLMFixResult>();
+  private readonly rateLimiter: LLMRateLimiter;
 
-  constructor(private readonly openAIApiKey: string) {}
+  constructor(
+    private readonly openAIApiKey: string,
+    private readonly router?: LLMRouter,
+  ) {
+    this.rateLimiter = new LLMRateLimiter(rateLimitFromEnv());
+  }
 
   async attemptFix(
     callSite: CallSite,
     originalContent: string,
     change: BreakingChange,
     context: LLMContext,
+    complexity: FixComplexity = 'medium',
   ): Promise<LLMFixResult> {
     if (!this.openAIApiKey) {
       logger.warn('OpenAI API key not configured, skipping LLM fallback');
@@ -53,10 +82,33 @@ export class LLMFallback {
       return cached;
     }
 
+    // Cost-aware routing: block the call entirely when caps are exhausted.
+    const routed = this.router ? this.router.route(callSite, change, complexity) : undefined;
+    if (routed && routed.shouldFallback) {
+      logger.warn({ reason: routed.reason }, 'LLM call blocked by cost controls');
+      fixAttempts.inc({ result: 'manual_required' });
+      const result: LLMFixResult = {
+        success: false,
+        confidence: 0,
+        needsManualReview: true,
+        suggestion: routed.reason ?? 'LLM call blocked by cost controls. Manual review required.',
+      };
+      this.cache.set(cacheKey, result);
+      return result;
+    }
+    const model = routed?.model.model ?? DEFAULT_MODEL;
+
     const prompt = this.buildPrompt(callSite, originalContent, change, context);
     try {
-      const response = await this.callOpenAI(prompt);
-      const result = this.parseResponse(response);
+      await this.rateLimiter.acquire();
+      let response: LLMCallResult;
+      try {
+        response = await this.callOpenAI(prompt, model);
+      } finally {
+        this.rateLimiter.release();
+      }
+
+      const result = this.parseResponse(response.content);
 
       if (result.success && result.confidence < CONFIDENCE_THRESHOLD) {
         logger.info(
@@ -64,6 +116,14 @@ export class LLMFallback {
           'LLM confidence too low, marking for manual review',
         );
         result.needsManualReview = true;
+      }
+
+      // Record actual usage against the cost caps (only when a router is active).
+      if (this.router && routed && (response.promptTokens > 0 || response.completionTokens > 0)) {
+        this.router.trackCall(routed.model, {
+          input: response.promptTokens,
+          output: response.completionTokens,
+        });
       }
 
       fixAttempts.inc({
@@ -140,7 +200,7 @@ Return JSON:
   // OPENAI CALL
   // ──────────────────────────────────────────────
 
-  private async callOpenAI(prompt: string): Promise<string> {
+  private async callOpenAI(prompt: string, model: string): Promise<LLMCallResult> {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -148,7 +208,7 @@ Return JSON:
         Authorization: `Bearer ${this.openAIApiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         messages: [
           {
             role: 'system',
@@ -169,8 +229,13 @@ Return JSON:
 
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
-    return data.choices?.[0]?.message?.content ?? '';
+    return {
+      content: data.choices?.[0]?.message?.content ?? '',
+      promptTokens: data.usage?.prompt_tokens ?? 0,
+      completionTokens: data.usage?.completion_tokens ?? 0,
+    };
   }
 
   // ──────────────────────────────────────────────
@@ -208,4 +273,12 @@ Return JSON:
 
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function envNumber(value: string | undefined, fallback: number): number {
+  if (value === undefined || value.trim() === '') {
+    return fallback;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
