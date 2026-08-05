@@ -2,9 +2,11 @@ import { relative } from 'node:path';
 
 import { Octokit } from '@octokit/rest';
 
+import { AutonomyLevel, AutonomyManager } from './autonomy/levels';
 import { configHash, loadConfig, type MantiorConfig } from './config/loader';
 import { costConfigFromEnv, CostController } from './cost-control';
 import { DiffEngine, type BreakingChange } from './diff/engine';
+import { ConfidenceCalculator } from './fixer/confidence';
 import { DeterministicFixer } from './fixer/deterministic';
 import { LLMRouter } from './fixer/llm-router';
 import { PRDeduplicator } from './github/pr-dedupe';
@@ -14,7 +16,7 @@ import { errorsTotal, scansTotal } from './metrics';
 import { Notifier } from './notifier';
 import { ASTWalker } from './scanner/ast-walker';
 import { RepoCloner } from './scanner/repo-cloner';
-import { MantiorDatabase } from './state/database';
+import { MantiorDatabase, type AutonomyLog } from './state/database';
 
 export interface OrchestratorOptions {
   dryRun?: boolean;
@@ -50,6 +52,8 @@ export class Orchestrator {
   private readonly diffEngine = new DiffEngine();
   private readonly cloner = new RepoCloner();
   private readonly walker = new ASTWalker();
+  private readonly autonomyManager = new AutonomyManager();
+  private readonly confidenceCalculator = new ConfidenceCalculator();
   private readonly notifier: Notifier;
   private readonly db = MantiorDatabase.getInstance();
 
@@ -101,15 +105,57 @@ export class Orchestrator {
     const deduper = new PRDeduplicator(
       new Octokit({ auth: token ?? '', userAgent: 'Mantior/1.0' }),
     );
-    const canOpenPrs = config.rules.auto_pr && !options.dryRun && opener.enabled;
+    const userLevel = this.autonomyManager.getCurrentLevel();
+    const canOpenPrs =
+      config.rules.auto_pr &&
+      !options.dryRun &&
+      opener.enabled &&
+      userLevel >= AutonomyLevel.EXECUTE_WITH_APPROVAL;
+    const fixEnabled = userLevel >= AutonomyLevel.SIMULATE;
     if (!canOpenPrs) {
       logger.warn(
         {
           autoPr: config.rules.auto_pr,
           dryRun: options.dryRun ?? false,
           tokenConfigured: opener.enabled,
+          autonomyLevel: AutonomyLevel[userLevel],
         },
         'PR opening disabled for this run',
+      );
+    }
+    if (userLevel <= AutonomyLevel.RECOMMEND) {
+      logger.warn(
+        { autonomyLevel: AutonomyLevel[userLevel] },
+        'Autonomy level: no code changes will be made (observe/recommend)',
+      );
+    }
+
+    // Autonomy audit trail: one decision per breaking change, with the
+    // confidence that justified it (Four Horsemen — Unreliable Actions).
+    const autonomyDecisions: Array<Omit<AutonomyLog, 'id'>> = [];
+    for (const change of changes) {
+      const confidence = this.confidenceCalculator.calculate(change, {});
+      const permissions = this.autonomyManager.getActionPermissions(change, confidence);
+      autonomyDecisions.push({
+        timestamp: new Date().toISOString(),
+        scan_id: 0,
+        change_type: change.type,
+        change_message: change.message,
+        requested_level: userLevel,
+        effective_level: permissions.level,
+        action_taken: permissions.action,
+        confidence_score: confidence.score,
+        requires_approval: permissions.requiresApproval,
+      });
+      logger.info(
+        {
+          change: change.message,
+          level: AutonomyLevel[permissions.level],
+          action: permissions.action,
+          requiresApproval: permissions.requiresApproval,
+          confidence: confidence.score,
+        },
+        'Autonomy check result',
       );
     }
 
@@ -125,6 +171,7 @@ export class Orchestrator {
         opener,
         deduper,
         canOpenPrs,
+        fixEnabled,
       );
       consumers.push(outcome);
       if (outcome.error) {
@@ -151,6 +198,7 @@ export class Orchestrator {
       errors_count: errorsCount,
       status,
       consumers,
+      autonomyLogs: autonomyDecisions,
     });
 
     const summary: OrchestratorResult = {
@@ -191,6 +239,7 @@ export class Orchestrator {
     opener: PROpener,
     deduper: PRDeduplicator,
     canOpenPrs: boolean,
+    fixEnabled: boolean,
   ): Promise<ConsumerOutcome> {
     let dir: string | undefined;
     try {
@@ -199,6 +248,17 @@ export class Orchestrator {
 
       const callSites = await this.walker.findCallSites(dir, changes, language);
       logger.info({ repo, callSites: callSites.length }, 'Call sites located');
+
+      if (!fixEnabled) {
+        logger.info({ repo }, 'Autonomy level: call sites located, but no fixes applied');
+        return {
+          repo,
+          language,
+          callSitesFound: callSites.length,
+          prOpened: false,
+          manualInterventions: 0,
+        };
+      }
 
       const outcome = await fixer.applyFixes(callSites, config, changes);
       const fixedFiles: Record<string, string> = {};
@@ -287,6 +347,7 @@ export class Orchestrator {
       errors_count: number;
       status: 'success' | 'failed' | 'partial';
       consumers: ConsumerOutcome[];
+      autonomyLogs: Array<Omit<AutonomyLog, 'id'>>;
     },
   ): void {
     try {
@@ -300,6 +361,9 @@ export class Orchestrator {
         status: run.status,
         config_hash: configHash(configPath),
       });
+      for (const log of run.autonomyLogs) {
+        this.db.insertAutonomyLog({ ...log, scan_id: scanId });
+      }
       for (const consumer of run.consumers) {
         this.db.insertConsumer({
           scan_id: scanId,

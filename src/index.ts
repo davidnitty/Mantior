@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import * as dotenv from 'dotenv';
 
 import {
+  setupAutonomyCommand,
   setupFixCommand,
   setupGlobalCommands,
   setupInitCommand,
@@ -24,6 +25,7 @@ const program = new Command();
 setupGlobalCommands(program);
 setupInitCommand(program);
 setupValidateCommand(program);
+setupAutonomyCommand(program);
 setupScanCommand(program);
 setupFixCommand(program);
 setupStatusCommand(program);

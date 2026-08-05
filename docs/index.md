@@ -116,6 +116,7 @@ mantior status
 | `mantior fix` | Fixes changes and opens PRs |
 | `mantior status` | Shows historical metrics and health |
 | `mantior logs` | Shows recent activity |
+| `mantior autonomy` | Manage autonomy level (1-5) and view decisions |
 | `mantior server` | Runs as a daemon (health + metrics + webhooks) |
 
 ## Troubleshooting
@@ -135,9 +136,7 @@ GITHUB_WEBHOOK_SECRET=your-secret-here
 
 In production, requests without a valid signature are rejected.
 
-## Cost Controls (LLM)
-
-Mantior guards OpenAI spend with hard caps — LLM calls **stop entirely** once a limit is hit:
+## Cost Controls (LLM)Mantior guards OpenAI spend with hard caps — LLM calls **stop entirely** once a limit is hit:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -149,6 +148,29 @@ Mantior guards OpenAI spend with hard caps — LLM calls **stop entirely** once 
 | `LLM_CALLS_PER_MINUTE` | `120` | Max LLM calls per minute |
 
 Costs are persisted in SQLite (`metrics` table, `llm_cost`) so limits survive restarts. The fixer also routes each call to the **cheapest capable model** (gpt-4o-mini → gpt-4o → gpt-4-turbo-preview by complexity) and downgrades when a call would exceed 10% of the remaining daily budget.
+
+## Autonomy Levels
+
+Mantior's autonomy is a 1–5 dial — start at Level 1 or 2, build trust, climb as confidence grows:
+
+| Level | Name | What Mantior does |
+| :--- | :--- | :--- |
+| 1 | Observe | Monitor only — no changes, no fixes |
+| 2 | Recommend | Analyze + locate call sites, propose fixes — nothing applied |
+| 3 | Simulate | Apply fixes in the isolated clone, generate diffs — no PRs |
+| 4 | Execute with Approval | Open PRs for human review — never auto-merge |
+| 5 | Execute Automatically | Auto-execute low-risk, high-confidence (≥90%) changes |
+
+Every decision (change type → effective level → action → confidence) is written to the `autonomy_logs` audit trail in SQLite.
+
+```bash
+mantior autonomy --list           # show configuration
+mantior autonomy --set 4          # set level (persisted)
+mantior autonomy --logs --tail 20 # recent decisions
+mantior autonomy --export r.json  # audit report
+```
+
+Change-type overrides and per-level confidence thresholds (30/50/70/90) ship in `src/autonomy/levels.ts`; `alwaysRequireApproval` (schema/endpoint removal) and `neverAutomate` lists are enforced regardless of level.
 
 ## Database
 

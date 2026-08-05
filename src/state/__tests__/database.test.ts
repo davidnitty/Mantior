@@ -78,4 +78,44 @@ describe('MantiorDatabase', () => {
     expect(activity.length).toBeGreaterThan(0);
     expect(['scan', 'pr', 'error']).toContain(activity[0]?.kind);
   });
+
+  it('stores and reads autonomy decisions', () => {
+    const db = MantiorDatabase.getInstance(dbPath);
+    const scanId = db.insertScan({
+      timestamp: '2026-01-03T00:00:00.000Z',
+      duration: 0.1,
+      changes_detected: 1,
+      consumers_scanned: 0,
+      prs_opened: 0,
+      errors_count: 0,
+      status: 'success',
+      config_hash: 'abcd',
+    });
+    db.insertAutonomyLog({
+      timestamp: '2026-01-03T00:00:00.100Z',
+      scan_id: scanId,
+      change_type: 'property_renamed',
+      change_message: 'amount → amount_cents',
+      requested_level: 4,
+      effective_level: 4,
+      action_taken: 'pr_with_approval',
+      confidence_score: 90,
+      requires_approval: true,
+    });
+
+    const logs = db.getRecentAutonomyLogs(10);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.action_taken).toBe('pr_with_approval');
+  });
+
+  it('persists key/value settings', () => {
+    const db = MantiorDatabase.getInstance(dbPath);
+    expect(db.getSetting('autonomy_level')).toBeUndefined();
+
+    db.setSetting('autonomy_level', '5');
+    expect(db.getSetting('autonomy_level')).toBe('5');
+
+    db.setSetting('autonomy_level', '2');
+    expect(db.getSetting('autonomy_level')).toBe('2');
+  });
 });

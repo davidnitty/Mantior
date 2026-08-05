@@ -50,6 +50,7 @@ docker run --rm \
 | `mantior fix` | Fix + open PRs (`--dry-run`, `--no-pr`, `--json`) |
 | `mantior status` | Historical metrics from SQLite |
 | `mantior logs` | Recent activity (`--tail N`, `--json`) |
+| `mantior autonomy` | Set/view autonomy level 1–5 + decision audit (`--list`, `--set`, `--logs`, `--export`) |
 | `mantior server` | Daemon: `/health`, `/metrics`, `/webhook` |
 
 ## How the fixes work
@@ -58,6 +59,17 @@ docker run --rm \
 2. **Scanner** — ts-morph AST walker (TS/JS) and a CPython `ast` walker; regex fallback for other languages.
 3. **Fixer** — deterministic rule engine first (config `mappings`), then an OpenAI fallback gated on ≥ 70% confidence. LLM spend is guarded by hard cost caps (per-scan/day/month, persisted to SQLite), cost-aware model routing (cheapest capable model, budget-based downgrades), rate limiting, and response caching. Anything uncertain lands in a manual-review bucket — Mantior never guesses silently.
 4. **PR opener** — direct branch with automatic fork fallback; deduplicated; labels + reviewers; PRs are always human-reviewed before merging (no auto-merge, by design).
+
+## Autonomy
+
+Mantior ships a 1–5 **autonomy dial** so you control how much it may change: **1 Observe** (monitor only) → **2 Recommend** (analyze, change nothing) → **3 Simulate** (fix in the isolated clone, no PRs) → **4 Execute with Approval** (PRs, default) → **5 Execute Automatically** (≥90% confidence, low-risk). Every decision is confidence-scored and written to an `autonomy_logs` audit trail:
+
+```bash
+mantior autonomy --list
+mantior autonomy --set 4
+mantior autonomy --logs --tail 20
+mantior autonomy --export report.json
+```
 
 ## Configuration
 

@@ -53,6 +53,22 @@ export interface MetricRecord {
   labels: string;
 }
 
+export interface AutonomyLog {
+  id: number;
+  timestamp: string;
+  scan_id: number;
+  change_type: string;
+  change_message: string;
+  requested_level: number;
+  effective_level: number;
+  action_taken: string;
+  confidence_score: number;
+  requires_approval: boolean;
+  approved?: boolean;
+  approved_at?: string;
+  approved_by?: string;
+}
+
 export interface ConfigRecord {
   id: number;
   name: string;
@@ -93,6 +109,7 @@ type InsertError = Omit<ErrorRecord, 'id'>;
 type InsertMetric = Omit<MetricRecord, 'id'>;
 type InsertConfig = Omit<ConfigRecord, 'id'>;
 type InsertConsumer = Omit<ConsumerRecord, 'id'>;
+type InsertAutonomyLog = Omit<AutonomyLog, 'id'>;
 
 // ──────────────────────────────────────────────
 // DATABASE
@@ -203,6 +220,31 @@ export class MantiorDatabase {
       CREATE INDEX IF NOT EXISTS idx_prs_status ON prs(status);
       CREATE INDEX IF NOT EXISTS idx_errors_scan_id ON errors(scan_id);
       CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON metrics(timestamp);
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS autonomy_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        scan_id INTEGER NOT NULL,
+        change_type TEXT NOT NULL,
+        change_message TEXT NOT NULL,
+        requested_level INTEGER NOT NULL,
+        effective_level INTEGER NOT NULL,
+        action_taken TEXT NOT NULL,
+        confidence_score REAL NOT NULL,
+        requires_approval BOOLEAN NOT NULL,
+        approved BOOLEAN,
+        approved_at TEXT,
+        approved_by TEXT,
+        FOREIGN KEY (scan_id) REFERENCES scans(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_autonomy_logs_scan_id ON autonomy_logs(scan_id);
+      CREATE INDEX IF NOT EXISTS idx_autonomy_logs_timestamp ON autonomy_logs(timestamp);
     `);
   }
 
@@ -286,6 +328,33 @@ export class MantiorDatabase {
     return Number(result.lastInsertRowid);
   }
 
+  insertAutonomyLog(log: InsertAutonomyLog): number {
+    const stmt = this.db.prepare(
+      `INSERT INTO autonomy_logs (
+         timestamp, scan_id, change_type, change_message,
+         requested_level, effective_level, action_taken,
+         confidence_score, requires_approval, approved,
+         approved_at, approved_by
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const result = stmt.run(
+      log.timestamp,
+      log.scan_id,
+      log.change_type,
+      log.change_message,
+      log.requested_level,
+      log.effective_level,
+      log.action_taken,
+      log.confidence_score,
+      log.requires_approval ? 1 : 0,
+      log.approved ? 1 : 0,
+      log.approved_at ?? null,
+      log.approved_by ?? null,
+    );
+    return Number(result.lastInsertRowid);
+  }
+
   insertConfig(config: InsertConfig): number {
     const stmt = this.db.prepare(
       `INSERT INTO configs (name, file_hash, consumers_count, created_at)
@@ -364,6 +433,23 @@ export class MantiorDatabase {
       )
       .get(name, from) as { total: number };
     return row.total;
+  }
+
+  /** Persisted key/value settings (e.g. autonomy level). */
+  getSetting(key: string): string | undefined {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      { value: string } | undefined;
+    return row?.value;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+  }
+
+  getRecentAutonomyLogs(limit = 50): AutonomyLog[] {
+    return this.db
+      .prepare('SELECT * FROM autonomy_logs ORDER BY timestamp DESC LIMIT ?')
+      .all(limit) as unknown as AutonomyLog[];
   }
 
   getStatusSummary(): StatusSummary {

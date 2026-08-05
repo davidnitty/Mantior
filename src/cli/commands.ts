@@ -11,6 +11,7 @@ import { Orchestrator } from '../orchestrator';
 import { MantiorDatabase } from '../state/database';
 import { getVersion } from '../version';
 
+import { autonomyCommand } from './autonomy-command';
 import { logsCommand } from './logs-command';
 import { statusCommand } from './status-command';
 
@@ -339,6 +340,38 @@ export function setupLogsCommand(program: Command): void {
     .action((options: LogsOptions) => {
       const tail = Number.parseInt(options.tail === undefined ? '50' : String(options.tail), 10);
       void logsCommand({ tail: Number.isInteger(tail) ? tail : 50, json: options.json });
+    });
+}
+
+interface AutonomyOptions {
+  list?: boolean;
+  get?: string;
+  set?: string;
+  export?: string;
+  logs?: boolean;
+  tail?: number;
+}
+
+export function setupAutonomyCommand(program: Command): void {
+  program
+    .command('autonomy')
+    .description('Manage autonomy levels and permissions')
+    .option('--list', 'List current autonomy configuration')
+    .option('--get <key>', 'Get a specific configuration value')
+    .option('--set <level>', 'Set autonomy level (1-5)')
+    .option('--export <file>', 'Export an autonomy report (JSON)')
+    .option('--logs', 'Show recent autonomy decisions')
+    .option('--tail <number>', 'Number of decision log rows', '20')
+    .action((options: AutonomyOptions) => {
+      const tail = Number.parseInt(options.tail === undefined ? '20' : String(options.tail), 10);
+      void autonomyCommand({
+        list: options.list,
+        get: options.get,
+        set: options.set,
+        export: options.export,
+        logs: options.logs,
+        tail: Number.isInteger(tail) ? tail : 20,
+      });
     });
 }
 
