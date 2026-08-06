@@ -34,5 +34,25 @@ export * from '../policy/engine';
 // AUDIT SYSTEM
 export * from '../audit/logger';
 
+// SAFETY LAYER
+export * from '../safety/dry-run';
+export * from '../safety/permissions';
+export * from '../safety/validation';
+export * from '../safety/rate-limit';
+export * from '../safety/timeouts';
+export * from '../safety/idempotency';
+export * from '../safety/rollback';
+export {
+  ApprovalContext,
+  ApprovalManager,
+  ApprovalRequest,
+  ApprovalRule,
+  approvalManager,
+} from '../safety/approvals';
+export type { Approval as SafetyApproval } from '../safety/approvals';
+export * from '../safety/audit';
+export * from '../safety/metrics';
+export * from '../safety/cost-control';
+
 // DASHBOARD
 export { router as dashboardRouter } from '../dashboard/api';
