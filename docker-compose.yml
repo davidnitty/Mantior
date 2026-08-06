@@ -1,11 +1,15 @@
 version: '3.8'
 
+# Production image is built and published to GHCR by
+# .github/workflows/docker-publish.yml as:
+#   ghcr.io/<owner>/mantior/mantior:latest
+# For a private repo the host must authenticate first:
+#   docker login ghcr.io -u <user> --password-stdin <<< <PAT with read:packages>
+# then `docker compose pull && docker compose up -d`.
+
 services:
   mantior:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: mantior/mantior:latest
+    image: ghcr.io/davidnitty/mantior/mantior:latest
     container_name: mantior
     restart: unless-stopped
     ports:
@@ -29,10 +33,7 @@ services:
       start_period: 10s
 
   mantior-cli:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: mantior/mantior:latest
+    image: ghcr.io/davidnitty/mantior/mantior:latest
     container_name: mantior-cli
     restart: "no"
     volumes:

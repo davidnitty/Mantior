@@ -23,7 +23,7 @@ npm install -g mantior
 Or run with Docker:
 
 ```bash
-docker pull mantior/mantior:latest
+docker pull ghcr.io/davidnitty/mantior/mantior:latest
 ```
 
 ### 2. Initialize Configuration

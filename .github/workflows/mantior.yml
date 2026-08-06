@@ -2,7 +2,7 @@ name: Mantior API Scan
 
 # Sample workflow: run Mantior whenever your API specs change.
 # The `mantior/action@v1` action is the future publish target — until then,
-# run the CLI directly (docker run mantior/mantior:latest scan) or locally.
+# run the CLI directly (docker run ghcr.io/davidnitty/mantior/mantior:latest scan) or locally.
 on:
   push:
     paths:

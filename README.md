@@ -37,7 +37,7 @@ docker run --rm \
   -v $(pwd)/mantior.yaml:/app/mantior.yaml \
   -v $(pwd)/specs:/app/specs \
   -e GITHUB_TOKEN=$GITHUB_TOKEN \
-  mantior/mantior:latest scan
+  ghcr.io/davidnitty/mantior/mantior:latest scan
 ```
 
 ## Commands
