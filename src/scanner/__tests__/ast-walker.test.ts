@@ -149,5 +149,23 @@ describe('ASTWalker', () => {
       expect(callSites).toHaveLength(1);
       expect(callSites[0]?.line).toBe(1);
     });
+
+    it('finds spread operator usage', async () => {
+      const filePath = join(testDir, 'test.ts');
+      writeFileSync(filePath, 'const newCharge = { ...response, amount: 200 };\n', 'utf8');
+
+      const changes: BreakingChange[] = [
+        {
+          type: 'property_removed',
+          property: 'amount',
+          severity: 'breaking',
+          confidence: 100,
+          message: 'amount removed',
+        },
+      ];
+      const callSites = await walker.findCallSites(testDir, changes, 'typescript');
+
+      expect(callSites.some(s => s.matchText.includes('amount'))).toBe(true);
+    });
   });
 });

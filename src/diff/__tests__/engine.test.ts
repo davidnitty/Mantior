@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import axios from 'axios';
+
 import { DiffEngine } from '../engine';
 
 describe('DiffEngine', () => {
@@ -228,6 +230,20 @@ describe('DiffEngine', () => {
       const changes = await engine.compare(oldSpec, newSpec);
 
       expect(changes).toHaveLength(0);
+    });
+
+    it('loads spec from a remote URL', async () => {
+      const remoteSpec = { openapi: '3.0.0', info: { title: 'Remote API' }, paths: {} };
+      const getSpy = jest.spyOn(axios, 'get');
+      getSpy.mockResolvedValueOnce({ data: remoteSpec } as never);
+
+      try {
+        const spec = await engine['loadSpec']('https://example.com/spec.json');
+        expect(spec).toHaveProperty('openapi');
+        expect(getSpy).toHaveBeenCalledWith('https://example.com/spec.json', expect.anything());
+      } finally {
+        getSpy.mockRestore();
+      }
     });
   });
 });
