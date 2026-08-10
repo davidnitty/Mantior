@@ -1,0 +1,23 @@
+type Payment {
+  id: ID!
+  amount: Int
+  status: String
+  user_id: String
+  card: Card
+}
+
+type Card {
+  id: ID!
+  brand: String
+  last4: String
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+}
+
+type Query {
+  payments: [Payment!]!
+}

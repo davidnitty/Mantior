@@ -10,9 +10,13 @@ import { logger } from '../logger';
 // CONFIG TYPES
 // ──────────────────────────────────────────────
 
+export type ApiProtocol = 'rest' | 'graphql';
+
 export interface ApiConfig {
   name: string;
-  /** Path to the NEW OpenAPI spec consumers should migrate to. */
+  /** Protocol of the API under maintenance: REST/OpenAPI or GraphQL SDL. */
+  protocol?: ApiProtocol;
+  /** Path to the NEW spec (OpenAPI file/URL, or GraphQL .graphql/.gql SDL). */
   spec: string;
   /** URL (or local path) of the CURRENT/LIVE spec consumers are coded against. */
   reference_url: string;
@@ -135,8 +139,10 @@ export function configHash(configPath: string): string {
 
 function parseApi(raw: unknown, baseDir: string): ApiConfig {
   const api = asRecord(raw, 'api');
+  const protocol = optionalString(api.protocol, 'api.protocol');
   return {
     name: requiredString(api.name, 'api.name'),
+    protocol: protocol === 'graphql' ? 'graphql' : 'rest',
     spec: resolveReference(requiredString(api.spec, 'api.spec'), baseDir),
     reference_url: requiredString(api.reference_url, 'api.reference_url'),
   };

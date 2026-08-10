@@ -20,7 +20,12 @@ export type BreakingChangeType =
   | 'property_renamed'
   | 'type_changed'
   | 'required_added'
-  | 'enum_value_removed';
+  | 'enum_value_removed'
+  // GraphQL protocol
+  | 'type_removed'
+  | 'field_removed'
+  | 'field_type_changed'
+  | 'field_deprecated';
 
 export type ChangeSeverity = 'breaking' | 'risky' | 'safe';
 

@@ -1,12 +1,16 @@
 # 🛡️ Mantior
 
-**Self-Maintaining APIs.** Ship breaking changes without breaking customers. Mantior automatically migrates downstream code.
+**Self-Maintaining REST & GraphQL APIs.** Ship breaking changes without breaking customers. Mantior automatically migrates downstream code.
 
 [![CI](https://github.com/mantior/mantior/actions/workflows/ci.yml/badge.svg)](https://github.com/mantior/mantior/actions/workflows/ci.yml)
 
 ## What It Does
 
 Mantior compares the **live spec** of your API (`reference_url`) against the **new spec** you're shipping (`spec`), detects the breaking changes, scans every **consumer repository**, applies **deterministic fixes** (with an LLM fallback for complex cases), and opens **production-ready PRs** — before your customers ever break.
+
+**Supported protocols** (set `api.protocol`):
+- `rest` (default) — OpenAPI v1→v2: endpoint/schema/property/type/enum diffs
+- `graphql` — SDL diff (type/field removal, renames, type changes, deprecations) and client scanning of `gql`/`graphql` tagged templates (Apollo, urql, Relay)
 
 ## Quick Start
 

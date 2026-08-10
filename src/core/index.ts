@@ -31,6 +31,11 @@ export * from '../tools/rollback';
 // POLICY ENGINE
 export * from '../policy/engine';
 
+// GRAPHQL PROTOCOL SUPPORT
+export * from '../graphql/schema';
+export * from '../graphql/diff';
+export * from '../graphql/scanner';
+
 // AUDIT SYSTEM
 export * from '../audit/logger';
 

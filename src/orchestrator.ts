@@ -11,6 +11,8 @@ import { DeterministicFixer } from './fixer/deterministic';
 import { LLMRouter } from './fixer/llm-router';
 import { PRDeduplicator } from './github/pr-dedupe';
 import { PROpener, type PROpeningResult } from './github/pr-opener';
+import { GraphQLDiffEngine } from './graphql/diff';
+import { GraphQLClientScanner } from './graphql/scanner';
 import { logger } from './logger';
 import { errorsTotal, scansTotal } from './metrics';
 import { Notifier } from './notifier';
@@ -50,8 +52,10 @@ interface ConsumerOutcome {
  */
 export class Orchestrator {
   private readonly diffEngine = new DiffEngine();
+  private readonly graphqlDiff = new GraphQLDiffEngine();
   private readonly cloner = new RepoCloner();
   private readonly walker = new ASTWalker();
+  private readonly graphqlScanner = new GraphQLClientScanner();
   private readonly autonomyManager = new AutonomyManager();
   private readonly confidenceCalculator = new ConfidenceCalculator();
   private readonly notifier: Notifier;
@@ -77,7 +81,10 @@ export class Orchestrator {
 
     let changes: BreakingChange[];
     try {
-      changes = await this.diffEngine.compare(config.api.reference_url, config.api.spec);
+      changes =
+        config.api.protocol === 'graphql'
+          ? await this.graphqlDiff.compare(config.api.reference_url, config.api.spec)
+          : await this.diffEngine.compare(config.api.reference_url, config.api.spec);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error({ error: message }, 'Diff failed');
@@ -246,7 +253,10 @@ export class Orchestrator {
       dir = await this.cloner.clone(repo, branch);
       logger.info({ repo }, 'Cloned consumer repository');
 
-      const callSites = await this.walker.findCallSites(dir, changes, language);
+      const callSites =
+        config.api.protocol === 'graphql'
+          ? await this.graphqlScanner.findCallSites(dir, changes)
+          : await this.walker.findCallSites(dir, changes, language);
       logger.info({ repo, callSites: callSites.length }, 'Call sites located');
 
       if (!fixEnabled) {
