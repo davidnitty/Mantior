@@ -10,6 +10,9 @@ jobs:
   quality-checks:
     name: Quality Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
       - uses: actions/checkout@v3
@@ -35,19 +38,23 @@ jobs:
       - name: Unit Tests
         run: npm run test:unit -- --coverage
 
+      # Uploading to a private repo requires a CODECOV_TOKEN. The upload is a
+      # best-effort bonus: skip it entirely when no token is configured (avoids
+      # codecov-action retry hangs stalling the whole job) and never let a
+      # failed upload fail CI.
       - name: Upload Coverage
+        if: env.CODECOV_TOKEN != ''
+        continue-on-error: true
         uses: codecov/codecov-action@v3
         with:
           directory: ./coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-          # Uploading to a private repo requires a CODECOV_TOKEN; until one is
-          # configured, don't let the upload fail the pipeline.
-          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
+          token: ${{ env.CODECOV_TOKEN }}
 
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: quality-checks
+    timeout-minutes: 20
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
