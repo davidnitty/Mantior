@@ -1,6 +1,6 @@
 # 🛡️ Mantior
 
-**Self-Maintaining APIs.** AI agents that fix breaking API changes before they break your customers — eliminating the 30% Engineering Migration Tax.
+**Self-Maintaining APIs.** Ship breaking changes without breaking customers. Mantior automatically migrates downstream code.
 
 [![CI](https://github.com/mantior/mantior/actions/workflows/ci.yml/badge.svg)](https://github.com/mantior/mantior/actions/workflows/ci.yml)
 
