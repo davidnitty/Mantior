@@ -62,5 +62,8 @@ export * from '../safety/cost-control';
 // SECURITY LAYER
 export * from '../security/secret-masker';
 
+// VALIDATION LAYER
+export * from '../validation/sandbox-executor';
+
 // DASHBOARD
 export { router as dashboardRouter } from '../dashboard/api';

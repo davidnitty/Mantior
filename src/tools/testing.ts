@@ -1,11 +1,7 @@
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-
 import { AuditLogger } from '../audit/logger';
 import { logger } from '../logger';
 import { tracer } from '../monitoring/traces';
-
-const execAsync = promisify(exec);
+import { SandboxExecutor } from '../validation/sandbox-executor';
 
 export interface TestResult {
   passed: boolean;
@@ -16,17 +12,14 @@ export interface TestResult {
   failures: string[];
 }
 
-interface ExecError extends Error {
-  stdout?: string;
-  stderr?: string;
-}
-
 /** Runs a repo's test suite (e.g. `npm test`) and parses the summary line. */
 export class TestRunner {
   private readonly audit: AuditLogger;
+  private readonly sandbox: SandboxExecutor;
 
   constructor(audit = new AuditLogger()) {
     this.audit = audit;
+    this.sandbox = new SandboxExecutor();
   }
 
   runTests(repoPath: string, command = 'npm test'): Promise<TestResult> {
@@ -37,44 +30,33 @@ export class TestRunner {
         logger.info({ repoPath, command }, 'Running tests');
         tracer.setAttribute(span, 'repoPath', repoPath);
 
-        try {
-          const { stdout, stderr } = await execAsync(command, {
-            cwd: repoPath,
-            env: { ...process.env, CI: 'true' },
-          });
-          const result = this.parseTestOutput(
-            String(stdout),
-            String(stderr),
-            Date.now() - startTime,
-          );
-          this.audit.logAction({
-            action: 'tests_completed',
-            metadata: {
-              repoPath,
-              passed: result.passed,
-              total: result.total,
-              duration: result.duration,
-            },
-          });
-          return result;
-        } catch (error) {
-          const execError = error as ExecError;
-          const result = this.parseTestOutput(
-            execError.stdout ?? '',
-            execError.stderr ?? '',
-            Date.now() - startTime,
-          );
-          this.audit.logAction({
-            action: 'tests_failed',
-            metadata: {
-              repoPath,
-              total: result.total,
-              failedCount: result.failedCount,
-              duration: result.duration,
-            },
-          });
-          return result;
-        }
+        // The Warden: strip secrets and blackhole network so a consumer's test
+        // suite can't reach production systems or exfiltrate data.
+        const outcome = await this.sandbox.execute(command, {
+          cwd: repoPath,
+          timeoutMs: 300_000,
+          allowNetwork: false,
+        });
+
+        const result = this.parseTestOutput(
+          outcome.stdout,
+          outcome.exitCode === 124
+            ? `${outcome.stderr}\nProcess killed: Timeout exceeded`
+            : outcome.stderr,
+          Date.now() - startTime,
+        );
+
+        this.audit.logAction({
+          action: result.passed ? 'tests_completed' : 'tests_failed',
+          metadata: {
+            repoPath,
+            passed: result.passed,
+            total: result.total,
+            exitCode: outcome.exitCode,
+            duration: result.duration,
+          },
+        });
+        return result;
       },
       { repoPath },
     );
