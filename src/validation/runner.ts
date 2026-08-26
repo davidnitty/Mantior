@@ -10,6 +10,7 @@ export interface ValidationStepResult {
   success: boolean;
   exitCode: number;
   durationMs: number;
+  required: boolean;
   testResults?: TestResults | null;
   error?: string;
 }
@@ -57,6 +58,7 @@ export class ValidationRunner {
           success,
           exitCode,
           durationMs,
+          required: step.required,
           testResults,
           error: success ? undefined : (stderr || stdout).slice(-ERROR_TAIL),
         });
@@ -70,6 +72,7 @@ export class ValidationRunner {
           success: false,
           exitCode: -1,
           durationMs: Date.now() - startTime,
+          required: step.required,
           error: error instanceof Error ? error.message : String(error),
         });
         if (step.required) {
