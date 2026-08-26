@@ -2,6 +2,7 @@ import type { BreakingChange } from '../diff/engine';
 import { logger } from '../logger';
 import { fixAttempts } from '../metrics';
 import type { CallSite } from '../scanner/ast-walker';
+import { SecretMasker } from '../security/secret-masker';
 
 import type { FixComplexity } from './deterministic';
 import { LLMRateLimiter } from './llm-rate-limit';
@@ -98,7 +99,13 @@ export class LLMFallback {
     }
     const model = routed?.model.model ?? DEFAULT_MODEL;
 
-    const prompt = this.buildPrompt(callSite, originalContent, change, context);
+    // Mask secrets before the code leaves the process, so a third-party LLM
+    // never sees production credentials. Restore them on the returned code.
+    const masker = new SecretMasker();
+    const safeContent = masker.mask(originalContent);
+    masker.logDetections();
+
+    const prompt = this.buildPrompt(callSite, safeContent, change, context);
     try {
       await this.rateLimiter.acquire();
       let response: LLMCallResult;
@@ -109,6 +116,9 @@ export class LLMFallback {
       }
 
       const result = this.parseResponse(response.content);
+      if (result.fixedContent !== undefined) {
+        result.fixedContent = masker.unmask(result.fixedContent);
+      }
 
       if (result.success && result.confidence < CONFIDENCE_THRESHOLD) {
         logger.info(

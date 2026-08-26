@@ -59,5 +59,8 @@ export * from '../safety/audit';
 export * from '../safety/metrics';
 export * from '../safety/cost-control';
 
+// SECURITY LAYER
+export * from '../security/secret-masker';
+
 // DASHBOARD
 export { router as dashboardRouter } from '../dashboard/api';
