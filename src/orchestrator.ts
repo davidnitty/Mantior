@@ -21,6 +21,8 @@ import { Notifier } from './notifier';
 import { ASTWalker } from './scanner/ast-walker';
 import { RepoCloner } from './scanner/repo-cloner';
 import { MantiorDatabase, type AutonomyLog } from './state/database';
+import { DEFAULT_VALIDATION_STEPS } from './validation/defaults';
+import { ValidationRunner, type ValidationStepResult } from './validation/runner';
 
 export interface OrchestratorOptions {
   dryRun?: boolean;
@@ -235,6 +237,54 @@ export class Orchestrator {
   }
 
   // ──────────────────────────────────────────────
+  // VALIDATION SANDBOX
+  // ──────────────────────────────────────────────
+
+  /**
+   * Run the consumer's validation pipeline (install → type-check → test →
+   * build) inside the Warden sandbox. Steps come from mantior.yaml
+   * `validation.steps`, falling back to sensible defaults; an empty/disabled
+   * config or a sandbox crash never blocks the PR.
+   */
+  private async runValidation(
+    repoDir: string,
+    config: MantiorConfig,
+  ): Promise<ValidationStepResult[]> {
+    const vcfg = config.validation;
+    if (vcfg && !vcfg.enabled) {
+      logger.info('Validation disabled in config; skipping sandbox');
+      return [];
+    }
+
+    const steps = vcfg && vcfg.steps.length > 0 ? vcfg.steps : DEFAULT_VALIDATION_STEPS;
+    const packageManager = vcfg?.package_manager ?? 'auto';
+    const started = Date.now();
+
+    try {
+      const results = await new ValidationRunner().run(repoDir, steps, packageManager);
+      const passed = results.filter(step => step.success).length;
+      logger.info(
+        {
+          repo: repoDir,
+          passed,
+          total: results.length,
+          durationSec: (Date.now() - started) / 1000,
+        },
+        'Validation sandbox complete',
+      );
+      return results;
+    } catch (error) {
+      // Decision #2: validation problems open the PR anyway (verdict flips),
+      // so a crash here degrades to "no data" instead of failing the run.
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Validation sandbox crashed; continuing without validation results',
+      );
+      return [];
+    }
+  }
+
+  // ──────────────────────────────────────────────
   // PER-CONSUMER PIPELINE
   // ──────────────────────────────────────────────
 
@@ -321,7 +371,17 @@ export class Orchestrator {
         }
       }
 
-      const prBody = generatePRBody(changes, Object.keys(fixedFiles), [], fixtureRun.results);
+      // Validation sandbox: run after all fixes are on disk, before the PR
+      // opens, against the cloned repo. A failure never blocks the PR — it
+      // only flips the verdict to MANUAL REVIEW REQUIRED in the body.
+      const validationResults = await this.runValidation(dir, config);
+
+      const prBody = generatePRBody(
+        changes,
+        Object.keys(fixedFiles),
+        validationResults,
+        fixtureRun.results,
+      );
 
       const result: PROpeningResult = await opener.createPR(
         dir,

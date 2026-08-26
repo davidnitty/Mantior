@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import type { ValidationStepConfig } from '../config/loader';
 import { logger } from '../logger';
 
@@ -37,6 +40,13 @@ export class ValidationRunner {
     const results: ValidationStepResult[] = [];
 
     for (const step of steps) {
+      // Skip steps whose npm script doesn't exist in the consumer's
+      // package.json (e.g. no "type-check" script) instead of failing them.
+      if (await this.shouldSkipStep(repoPath, step)) {
+        logger.info({ step: step.name }, 'Skipping validation step (script not found)');
+        continue;
+      }
+
       const command = interpolateCommand(step.command, packageManager);
       const startTime = Date.now();
       logger.info({ step: step.name, command }, 'Running validation step');
@@ -82,5 +92,27 @@ export class ValidationRunner {
     }
 
     return results;
+  }
+
+  /**
+   * True when a step invokes an npm script that the consumer repo does not
+   * define (`{pm} run <script>` or `{pm} test`). Non-package-manager commands
+   * are never skipped. If package.json can't be read, npm-script steps are
+   * skipped rather than failed.
+   */
+  async shouldSkipStep(repoPath: string, step: ValidationStepConfig): Promise<boolean> {
+    const scriptMatch = /^\{pm\}\s+(?:run\s+(\S+)|test)\b/.exec(step.command);
+    if (!scriptMatch) {
+      return false;
+    }
+    const scriptName = scriptMatch[1] ?? 'test';
+
+    try {
+      const raw = await readFile(join(repoPath, 'package.json'), 'utf8');
+      const pkg = JSON.parse(raw) as { scripts?: Record<string, string> };
+      return typeof pkg.scripts?.[scriptName] !== 'string';
+    } catch {
+      return true;
+    }
   }
 }

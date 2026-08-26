@@ -68,6 +68,7 @@ export * from '../validation/parsers';
 export * from '../validation/package-manager';
 export * from '../validation/runner';
 export * from '../validation/report';
+export * from '../validation/defaults';
 
 // DASHBOARD
 export { router as dashboardRouter } from '../dashboard/api';
