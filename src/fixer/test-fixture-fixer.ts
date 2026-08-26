@@ -1,4 +1,8 @@
+import { readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
+  Project,
   SyntaxKind,
   type Node,
   type PropertyAssignment,
@@ -6,10 +10,18 @@ import {
   type Type,
 } from 'ts-morph';
 
+import type { BreakingChange } from '../diff/engine';
+
 export interface TestFixResult {
   file: string;
   mocksUpdated: number;
   assertionsUpdated: number;
+}
+
+export interface TestFixtureRunResult {
+  results: TestFixResult[];
+  /** Absolute path → updated file text, ready to merge into the PR's fixedFiles. */
+  fixedFiles: Record<string, string>;
 }
 
 /**
@@ -130,4 +142,130 @@ function assertedTypeName(node: Node): string | undefined {
     current = current.getParent();
   }
   return undefined;
+}
+
+// ──────────────────────────────────────────────
+// REPO-LEVEL RUNNER
+// ──────────────────────────────────────────────
+
+const SKIP_DIRS = new Set(['node_modules', 'venv', '.venv', '.git', 'dist', 'build', '.next']);
+const CODE_EXTENSIONS = new Set(['.ts', '.tsx']);
+
+type RenameChange = BreakingChange & { property: string; newProperty: string; schema: string };
+
+/**
+ * Discover a cloned repo's source + test files, apply field renames to the
+ * test files, and return the modified contents plus a per-file summary. Loads
+ * the whole repo so imported types resolve for the type-aware checks.
+ */
+export function applyTestFixtureFixes(
+  repoDir: string,
+  changes: readonly BreakingChange[],
+): TestFixtureRunResult {
+  const renames = changes.filter((change): change is RenameChange => {
+    return (
+      change.type === 'property_renamed' &&
+      typeof change.property === 'string' &&
+      typeof change.newProperty === 'string' &&
+      typeof change.schema === 'string'
+    );
+  });
+  if (renames.length === 0) {
+    return { results: [], fixedFiles: {} };
+  }
+
+  const files = listCodeFiles(repoDir);
+  if (files.length === 0) {
+    return { results: [], fixedFiles: {} };
+  }
+
+  const project = new Project({ skipAddingFilesFromTsConfig: true });
+  for (const file of files) {
+    try {
+      project.addSourceFileAtPath(file);
+    } catch {
+      // Skip files the parser can't handle rather than failing the whole run.
+    }
+  }
+
+  const fixer = new TestFixtureFixer();
+  const results: TestFixResult[] = [];
+  const fixedFiles: Record<string, string> = {};
+
+  for (const sourceFile of project.getSourceFiles()) {
+    const path = sourceFile.getFilePath();
+    if (!isTestFile(path)) {
+      continue;
+    }
+
+    let mocksUpdated = 0;
+    let assertionsUpdated = 0;
+    for (const change of renames) {
+      const result = fixer.applyFieldRename(
+        sourceFile,
+        change.property,
+        change.newProperty,
+        change.schema,
+      );
+      mocksUpdated += result.mocksUpdated;
+      assertionsUpdated += result.assertionsUpdated;
+    }
+
+    if (mocksUpdated > 0 || assertionsUpdated > 0) {
+      results.push({ file: path, mocksUpdated, assertionsUpdated });
+      fixedFiles[path] = sourceFile.getFullText();
+    }
+  }
+
+  return { results, fixedFiles };
+}
+
+function isTestFile(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return (
+    lower.endsWith('.test.ts') ||
+    lower.endsWith('.test.tsx') ||
+    lower.endsWith('.spec.ts') ||
+    lower.endsWith('.spec.tsx') ||
+    lower.includes('/__tests__/') ||
+    lower.includes('\\__tests__\\') ||
+    lower.includes('/__mocks__/') ||
+    lower.includes('\\__mocks__\\')
+  );
+}
+
+function listCodeFiles(dir: string): string[] {
+  const results: string[] = [];
+  const walk = (current: string): void => {
+    let entries: string[];
+    try {
+      entries = readdirSync(current);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry)) {
+        continue;
+      }
+      const full = join(current, entry);
+      let isDirectory: boolean;
+      try {
+        isDirectory = statSync(full).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDirectory) {
+        walk(full);
+      } else if (CODE_EXTENSIONS.has(extension(full))) {
+        results.push(full);
+      }
+    }
+  };
+  walk(dir);
+  return results;
+}
+
+function extension(filePath: string): string {
+  const dot = filePath.lastIndexOf('.');
+  return dot >= 0 ? filePath.slice(dot) : '';
 }

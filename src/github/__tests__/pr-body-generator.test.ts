@@ -143,6 +143,13 @@ describe('generatePRBody', () => {
     expect(body).not.toContain('Test Fixture Remediation');
   });
 
+  it('omits the validation section and verdict when no validation ran', () => {
+    const body = generatePRBody([rename], ['fix-a'], []);
+    expect(body).not.toContain('Validation Sandbox Results');
+    expect(body).not.toContain('SAFE TO MERGE');
+    expect(body).not.toContain('MANUAL REVIEW REQUIRED');
+  });
+
   it('ends with the footer', () => {
     const body = generatePRBody([], [], []);
     expect(body).toContain(

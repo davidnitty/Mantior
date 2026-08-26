@@ -60,35 +60,37 @@ export function generatePRBody(
     );
   }
 
-  // 3. Validation Results (The Trust Builder)
-  lines.push('## 🧪 Validation Sandbox Results', '');
-  lines.push(
-    'Mantior cloned this repository into an isolated, network-restricted sandbox and executed your build/test pipeline to verify the migration.',
-    '',
-  );
-  lines.push('| Step | Status | Details | Duration |');
-  lines.push('|---|---|---|---|');
-  for (const res of validationResults) {
+  // 3. Validation Results (The Trust Builder) — only when validation ran.
+  if (validationResults.length > 0) {
+    lines.push('## 🧪 Validation Sandbox Results', '');
     lines.push(
-      `| **${escapeCell(res.name)}** | ${statusCell(res)} | ${detailsCell(res)} | ${durationCell(res)} |`,
+      'Mantior cloned this repository into an isolated, network-restricted sandbox and executed your build/test pipeline to verify the migration.',
+      '',
     );
-  }
-  lines.push('');
+    lines.push('| Step | Status | Details | Duration |');
+    lines.push('|---|---|---|---|');
+    for (const res of validationResults) {
+      lines.push(
+        `| **${escapeCell(res.name)}** | ${statusCell(res)} | ${detailsCell(res)} | ${durationCell(res)} |`,
+      );
+    }
+    lines.push('');
 
-  // 4. Overall Verdict — required steps must pass; optional failures are warnings.
-  const allRequiredPassed = validationResults.every(res => res.success || !res.required);
-  if (allRequiredPassed) {
-    lines.push('### ✅ Overall Verdict: SAFE TO MERGE', '');
-    lines.push(
-      'All required validation steps passed. The API migration is syntactically and functionally verified.',
-      '',
-    );
-  } else {
-    lines.push('### ⚠️ Overall Verdict: MANUAL REVIEW REQUIRED', '');
-    lines.push(
-      'One or more required validation steps failed. Please inspect the errors below and adjust the migration manually.',
-      '',
-    );
+    // 4. Overall Verdict — required steps must pass; optional failures are warnings.
+    const allRequiredPassed = validationResults.every(res => res.success || !res.required);
+    if (allRequiredPassed) {
+      lines.push('### ✅ Overall Verdict: SAFE TO MERGE', '');
+      lines.push(
+        'All required validation steps passed. The API migration is syntactically and functionally verified.',
+        '',
+      );
+    } else {
+      lines.push('### ⚠️ Overall Verdict: MANUAL REVIEW REQUIRED', '');
+      lines.push(
+        'One or more required validation steps failed. Please inspect the errors below and adjust the migration manually.',
+        '',
+      );
+    }
   }
 
   // 5. Error Logs (Collapsible)

@@ -1,7 +1,12 @@
-import { describe, expect, it } from '@jest/globals';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { Project, type SourceFile } from 'ts-morph';
 
-import { TestFixtureFixer } from '../test-fixture-fixer';
+import type { BreakingChange } from '../../diff/engine';
+import { TestFixtureFixer, applyTestFixtureFixes } from '../test-fixture-fixer';
 
 describe('TestFixtureFixer', () => {
   const fixer = new TestFixtureFixer();
@@ -96,5 +101,82 @@ const mockUser: User = { email: 'a@a.com' };
 
     expect(result).toMatchObject({ mocksUpdated: 0, assertionsUpdated: 0 });
     expect(result.file).toContain('test.ts');
+  });
+});
+
+describe('applyTestFixtureFixes', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'mantior-fixtures-'));
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  const renameChange: BreakingChange = {
+    type: 'property_renamed',
+    severity: 'breaking',
+    schema: 'User',
+    property: 'email',
+    newProperty: 'emailAddress',
+    message: 'Property "email" renamed to "emailAddress".',
+    confidence: 100,
+  };
+
+  it('updates matching test fixtures and leaves unrelated types untouched', () => {
+    writeFileSync(join(testDir, 'user.ts'), 'export interface User { email: string }\n');
+    writeFileSync(join(testDir, 'billing.ts'), 'export interface BillingInfo { email: string }\n');
+    writeFileSync(
+      join(testDir, 'getUser.test.ts'),
+      [
+        "import { User } from './user';",
+        "import { BillingInfo } from './billing';",
+        "const mockUser: User = { email: 'a@a.com' };",
+        "const billing: BillingInfo = { email: 'b@b.com' };",
+        "expect(mockUser.email).toBe('a@a.com');",
+      ].join('\n'),
+    );
+
+    const run = applyTestFixtureFixes(testDir, [renameChange]);
+
+    expect(run.results).toHaveLength(1);
+    expect(run.results[0]?.mocksUpdated).toBe(1);
+    expect(run.results[0]?.assertionsUpdated).toBe(1);
+
+    const fixedText = Object.values(run.fixedFiles)[0] ?? '';
+    expect(fixedText).toContain("const mockUser: User = { emailAddress: 'a@a.com' };");
+    expect(fixedText).toContain('mockUser.emailAddress');
+    // Collateral damage prevention: the BillingInfo mock is untouched.
+    expect(fixedText).toContain("const billing: BillingInfo = { email: 'b@b.com' };");
+  });
+
+  it('returns no results when there are no rename changes', () => {
+    writeFileSync(join(testDir, 'a.test.ts'), "const x = { email: 'x' };\n");
+
+    const run = applyTestFixtureFixes(testDir, [
+      {
+        type: 'field_removed',
+        severity: 'breaking',
+        property: 'email',
+        message: 'email removed',
+        confidence: 100,
+      },
+    ]);
+
+    expect(run.results).toHaveLength(0);
+    expect(Object.keys(run.fixedFiles)).toHaveLength(0);
+  });
+
+  it('skips node_modules', () => {
+    const nm = join(testDir, 'node_modules');
+    mkdirSync(nm, { recursive: true });
+    writeFileSync(join(nm, 'lib.test.ts'), "const mock: User = { email: 'x' };\n");
+    writeFileSync(join(testDir, 'user.ts'), 'export interface User { email: string }\n');
+
+    const run = applyTestFixtureFixes(testDir, [renameChange]);
+
+    expect(run.results).toHaveLength(0);
   });
 });

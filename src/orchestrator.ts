@@ -9,6 +9,8 @@ import { DiffEngine, type BreakingChange } from './diff/engine';
 import { ConfidenceCalculator } from './fixer/confidence';
 import { DeterministicFixer } from './fixer/deterministic';
 import { LLMRouter } from './fixer/llm-router';
+import { applyTestFixtureFixes } from './fixer/test-fixture-fixer';
+import { generatePRBody } from './github/pr-body-generator';
 import { PRDeduplicator } from './github/pr-dedupe';
 import { PROpener, type PROpeningResult } from './github/pr-opener';
 import { GraphQLDiffEngine } from './graphql/diff';
@@ -292,6 +294,19 @@ export class Orchestrator {
         return base;
       }
 
+      // Test fixture remediation: update mocks/assertions for renamed fields,
+      // merging the modified test files into the PR's fixed files.
+      const fixtureRun = applyTestFixtureFixes(dir, changes);
+      for (const [absolutePath, content] of Object.entries(fixtureRun.fixedFiles)) {
+        fixedFiles[toPosix(relative(dir, absolutePath))] = content;
+      }
+      if (fixtureRun.results.length > 0) {
+        logger.info(
+          { repo, testFiles: fixtureRun.results.length },
+          'Test fixtures updated to match the new API contract',
+        );
+      }
+
       if (!canOpenPrs) {
         logger.info({ repo }, 'PR skipped (disabled, dry-run, or missing token)');
         return base;
@@ -306,6 +321,8 @@ export class Orchestrator {
         }
       }
 
+      const prBody = generatePRBody(changes, Object.keys(fixedFiles), [], fixtureRun.results);
+
       const result: PROpeningResult = await opener.createPR(
         dir,
         repo,
@@ -315,6 +332,7 @@ export class Orchestrator {
         {
           labels: config.rules.pr_labels,
           reviewers: config.rules.default_reviewer ? [config.rules.default_reviewer] : undefined,
+          prBody,
         },
       );
       return {
