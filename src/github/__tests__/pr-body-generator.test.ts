@@ -121,6 +121,28 @@ describe('generatePRBody', () => {
     expect(body).toContain('line2|tail'); // error is verbatim inside the fenced block
   });
 
+  it('renders the test fixture remediation section when fixtures are provided', () => {
+    const body = generatePRBody(
+      [rename],
+      [],
+      [],
+      [
+        { file: 'src/users/__tests__/getUser.test.ts', mocksUpdated: 2, assertionsUpdated: 4 },
+        { file: 'src/users/__tests__/mocks.ts', mocksUpdated: 1, assertionsUpdated: 0 },
+      ],
+    );
+
+    expect(body).toContain('## 🧪 Test Fixture Remediation');
+    expect(body).toContain('| `src/users/__tests__/getUser.test.ts` | 2 | 4 |');
+    expect(body).toContain('| `src/users/__tests__/mocks.ts` | 1 | 0 |');
+    expect(body).toContain('**Total:** 3 mocks and 4 assertions automatically updated');
+  });
+
+  it('omits the test fixture section when no fixtures were updated', () => {
+    const body = generatePRBody([rename], [], []);
+    expect(body).not.toContain('Test Fixture Remediation');
+  });
+
   it('ends with the footer', () => {
     const body = generatePRBody([], [], []);
     expect(body).toContain(

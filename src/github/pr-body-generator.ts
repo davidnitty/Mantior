@@ -1,15 +1,18 @@
 import type { BreakingChange } from '../diff/engine';
+import type { TestFixResult } from '../fixer/test-fixture-fixer';
 import type { ValidationStepResult } from '../validation/runner';
 
 /**
- * Build the full Pull Request description: breaking changes → fixes → the
- * Warden validation sandbox results → overall verdict → error logs. This is
- * what earns reviewer trust by proving the migration was actually verified.
+ * Build the full Pull Request description: breaking changes → fixes → test
+ * fixture remediation → the Warden validation sandbox results → overall
+ * verdict → error logs. This is what earns reviewer trust by proving the
+ * migration was actually verified.
  */
 export function generatePRBody(
   breakingChanges: readonly BreakingChange[],
   fixesApplied: readonly unknown[],
   validationResults: ValidationStepResult[],
+  testFixtures: readonly TestFixResult[] = [],
 ): string {
   const lines: string[] = [];
 
@@ -30,6 +33,32 @@ export function generatePRBody(
   lines.push('## 🛠 Fixes Applied', '');
   lines.push(`Mantior applied **${fixesApplied.length}** automated fixes across this repository.`);
   lines.push('*Review the "Files Changed" tab for exact diffs.*', '');
+
+  // 2b. Test Fixture Remediation (only when test files were touched)
+  if (testFixtures.length > 0) {
+    const totalMocks = testFixtures.reduce((sum, fixture) => sum + fixture.mocksUpdated, 0);
+    const totalAssertions = testFixtures.reduce(
+      (sum, fixture) => sum + fixture.assertionsUpdated,
+      0,
+    );
+    lines.push('## 🧪 Test Fixture Remediation', '');
+    lines.push(
+      'Mantior detected that the source code changes required updates to your test mocks and assertions to keep the suite green.',
+      '',
+    );
+    lines.push('| Test File | Mocks Updated | Assertions Updated |');
+    lines.push('|---|---|---|');
+    for (const fixture of testFixtures) {
+      lines.push(
+        `| \`${fixture.file}\` | ${fixture.mocksUpdated} | ${fixture.assertionsUpdated} |`,
+      );
+    }
+    lines.push('');
+    lines.push(
+      `**Total:** ${totalMocks} mocks and ${totalAssertions} assertions automatically updated to match the new API contract.`,
+      '',
+    );
+  }
 
   // 3. Validation Results (The Trust Builder)
   lines.push('## 🧪 Validation Sandbox Results', '');
