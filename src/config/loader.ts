@@ -48,6 +48,24 @@ export interface NotificationsConfig {
   slack_webhook?: string;
 }
 
+export interface ValidationStepConfig {
+  name: string;
+  /** Command with an optional `{pm}` placeholder interpolated at runtime. */
+  command: string;
+  allow_network: boolean;
+  /** Timeout in seconds. */
+  timeout: number;
+  required: boolean;
+  parser?: string;
+}
+
+export interface ValidationConfig {
+  enabled: boolean;
+  /** 'auto' | 'npm' | 'yarn' | 'pnpm' | 'pip' | 'poetry' | 'go' */
+  package_manager: string;
+  steps: ValidationStepConfig[];
+}
+
 export interface MantiorConfig {
   api: ApiConfig;
   consumers: ConsumerConfig[];
@@ -55,6 +73,7 @@ export interface MantiorConfig {
   rules: RulesConfig;
   mappings: MappingConfig[];
   notifications: NotificationsConfig;
+  validation?: ValidationConfig;
 }
 
 export class ConfigError extends Error {
@@ -123,6 +142,7 @@ export function loadConfig(
     rules: parseRules(document.rules),
     mappings: parseMappings(document.mappings),
     notifications: parseNotifications(document.notifications),
+    validation: parseValidation(document.validation),
   };
 
   return config;
@@ -205,6 +225,43 @@ function parseNotifications(raw: unknown): NotificationsConfig {
   };
 }
 
+function parseValidation(raw: unknown): ValidationConfig | undefined {
+  if (isNil(raw)) {
+    return undefined;
+  }
+  const validation = asRecord(raw, 'validation');
+  return {
+    enabled: asBoolean(validation.enabled, 'validation.enabled', true),
+    package_manager:
+      optionalString(validation.package_manager, 'validation.package_manager') ?? 'auto',
+    steps: parseValidationSteps(validation.steps),
+  };
+}
+
+function parseValidationSteps(raw: unknown): ValidationStepConfig[] {
+  if (isNil(raw)) {
+    return [];
+  }
+  if (!Array.isArray(raw)) {
+    throw new ConfigError('validation.steps must be a list');
+  }
+  return raw.map((entry, index) => {
+    const step = asRecord(entry, `validation.steps[${index}]`);
+    return {
+      name: requiredString(step.name, `validation.steps[${index}].name`),
+      command: requiredString(step.command, `validation.steps[${index}].command`),
+      allow_network: asBoolean(
+        step.allow_network,
+        `validation.steps[${index}].allow_network`,
+        false,
+      ),
+      timeout: asNumber(step.timeout, `validation.steps[${index}].timeout`, 300),
+      required: asBoolean(step.required, `validation.steps[${index}].required`, true),
+      parser: optionalString(step.parser, `validation.steps[${index}].parser`),
+    };
+  });
+}
+
 // ──────────────────────────────────────────────
 // HELPERS
 // ──────────────────────────────────────────────
@@ -251,6 +308,16 @@ function asStringList(value: unknown, label: string, fallback: string[]): string
     throw new ConfigError(`${label} must be a list of strings`);
   }
   return value as string[];
+}
+
+function asNumber(value: unknown, label: string, fallback: number): number {
+  if (isNil(value)) {
+    return fallback;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new ConfigError(`${label} must be a positive number`);
+  }
+  return value;
 }
 
 function isNil(value: unknown): boolean {

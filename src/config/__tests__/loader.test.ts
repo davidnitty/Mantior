@@ -94,6 +94,74 @@ security:
     expect(() => loadConfig(path)).toThrow(ConfigError);
   });
 
+  it('parses the validation section', () => {
+    const path = writeConfig(`
+api:
+  name: "Payment API"
+  spec: ./specs/api-v2.yaml
+  reference_url: https://api.example.com/v1/openapi.json
+consumers:
+  - repo: "https://github.com/acme/web.git"
+validation:
+  enabled: true
+  package_manager: pnpm
+  steps:
+    - name: "Install dependencies"
+      command: "{pm} install"
+      allow_network: true
+      timeout: 300
+      required: false
+    - name: "Run Tests"
+      command: "{pm} test"
+      allow_network: false
+      timeout: 600
+      required: true
+      parser: "jest"
+`);
+    const config = loadConfig(path);
+
+    expect(config.validation?.enabled).toBe(true);
+    expect(config.validation?.package_manager).toBe('pnpm');
+    expect(config.validation?.steps).toHaveLength(2);
+    expect(config.validation?.steps[0]).toMatchObject({
+      name: 'Install dependencies',
+      command: '{pm} install',
+      allow_network: true,
+      timeout: 300,
+      required: false,
+    });
+    expect(config.validation?.steps[1]).toMatchObject({
+      name: 'Run Tests',
+      parser: 'jest',
+      allow_network: false,
+      required: true,
+    });
+  });
+
+  it('omits validation when the section is absent and defaults step options', () => {
+    const path = writeConfig(`
+api:
+  name: "Payment API"
+  spec: ./specs/api-v2.yaml
+  reference_url: https://api.example.com/v1/openapi.json
+consumers:
+  - repo: "https://github.com/acme/web.git"
+validation:
+  steps:
+    - name: "Run Tests"
+      command: "{pm} test"
+`);
+    const config = loadConfig(path);
+
+    expect(config.validation?.enabled).toBe(true);
+    expect(config.validation?.package_manager).toBe('auto');
+    expect(config.validation?.steps[0]).toMatchObject({
+      allow_network: false,
+      timeout: 300,
+      required: true,
+    });
+  });
+
   it('throws ConfigError when the file does not exist', () => {
     expect(() => loadConfig(join(testDir, 'missing.yaml'))).toThrow(ConfigError);
   });

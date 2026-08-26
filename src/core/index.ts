@@ -64,6 +64,9 @@ export * from '../security/secret-masker';
 
 // VALIDATION LAYER
 export * from '../validation/sandbox-executor';
+export * from '../validation/parsers';
+export * from '../validation/package-manager';
+export * from '../validation/runner';
 
 // DASHBOARD
 export { router as dashboardRouter } from '../dashboard/api';
